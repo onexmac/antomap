@@ -39,7 +39,7 @@
 body{background:var(--bg);color:var(--ink);font:400 15px/1.45 var(--display);-webkit-tap-highlight-color:transparent;-webkit-font-smoothing:antialiased}
 button{font:inherit;color:inherit;background:none;border:0;padding:0;cursor:pointer}
 button:focus-visible,[tabindex]:focus-visible{outline:2px solid var(--ink);outline-offset:3px;border-radius:10px}
-.app{max-width:1120px;margin:0 auto;padding-inline:16px;padding-block:14px 48px}
+.app{max-width:720px;margin:0 auto;padding-inline:16px;padding-block:14px 48px}
 
 /* status + title */
 .status{display:flex;justify-content:space-between;align-items:center;font:500 17px var(--display);font-variant-numeric:tabular-nums;padding-inline:4px}
@@ -121,6 +121,16 @@ h1{font:400 clamp(40px,11vw,62px)/1 var(--display);letter-spacing:-.025em;margin
 .rowbtn{transition:transform var(--spring-dur) var(--spring)}
 .rowbtn:active{transform:scale(.985)}
 .pname{will-change:transform}
+/* a company row opens in place into pill → map → angle → schools */
+.row.co{position:relative}
+.row.co.open{border-top-color:transparent}
+.exp{padding:6px 0 22px}
+.expin{display:grid;gap:14px}
+.expin>*{transform-origin:50% 0}
+.badge{flex:0 0 auto;width:44px;height:44px;border:1px solid var(--ink);border-radius:50%;display:grid;place-items:center}
+.badge svg{width:16px;height:16px}
+.expin .pill{min-height:104px}
+.mapcard .maphead .lab{color:var(--ink)}
 /* panel */
 .phead{display:flex;justify-content:space-between;align-items:baseline;gap:10px;padding:4px 4px 10px}
 .back{font:500 13px var(--display);letter-spacing:.06em;text-transform:uppercase;display:flex;align-items:center;gap:6px}
@@ -196,25 +206,14 @@ h1{font:400 clamp(40px,11vw,62px)/1 var(--display);letter-spacing:-.025em;margin
       Source
     </button>
   </div>
-  <main class="grid">
-    <section class="left">
-      <button class="backbar" id="backbar" hidden><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12.5 4.5L7 10l5.5 5.5"/></svg><span class="bn" id="backlabel">All companies</span><span class="num" id="backnum"></span></button>
-      <div class="pill" id="pill">
-        <button class="step" id="prev" aria-label="Previous"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4"><path d="M3.5 8h9"/></svg></button>
-        <div class="pmain"><div style="min-width:0"><div class="pname" id="pname"></div><div class="psub" id="psub"></div></div></div>
-        <button class="step" id="next" aria-label="Next"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4"><path d="M3.5 8h9M8 3.5v9"/></svg></button>
-        <div class="ring" aria-hidden="true"><svg viewBox="0 0 80 80"><circle class="tr" cx="40" cy="40" r="35" fill="none" stroke-width="4"/><circle class="fg" id="ringfg" cx="40" cy="40" r="35" fill="none" stroke-width="4" stroke-linecap="round" stroke-dasharray="219.9" stroke-dashoffset="219.9"/></svg><b id="ringtx"></b></div>
-      </div>
-      <div class="card mapcard">
-        <div class="maphead"><div class="tabs" id="tabs" role="toolbar" aria-label="Region"></div><span class="coord" id="coord"></span></div>
-        <svg id="map" role="img" aria-label="Map of companies and universities"></svg>
-        <button class="reset" id="reset" hidden>Whole region</button>
-        <div class="legend" id="legend"></div>
-      </div>
-      <div class="cards2" id="stats"></div>
-    </section>
-    <section class="right" id="panel" aria-live="polite"></section>
-  </main>
+  <section aria-label="Categories">
+    <div class="addrow"><span>Show</span><span class="m">Switch categories on or off</span></div>
+    <div class="rows filters" id="filters"></div>
+  </section>
+  <section aria-label="Companies">
+    <div class="addrow"><span>Companies</span><span class="m" id="count"></span></div>
+    <div class="rows" id="list"></div>
+  </section>
   <p class="note">Strength reflects known pipelines: placement schemes, formal partnerships, proximity and alumni concentration. No company publishes where its interns come from, so treat the ranking as directional. Across all of these, the student team you join (Formula Student / FSAE, student rocketry, CubeSats) matters as much as the school's name.</p>
 </div>
 
@@ -322,29 +321,13 @@ const glyph = (k, fill = 'currentColor') => k === 'uni'
   : `<svg viewBox="0 0 12 12" aria-hidden="true"><path d="${shapePath(k, 6, 6.4, 4.3)}" fill="${fill}"/></svg>`;
 const chev = `<svg class="chev" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.4"><path d="M5 3l4 4-4 4"/></svg>`;
 
-// ── state
-let st = { view: 'home', r: 'world', sel: null, uni: null, open: null, kinds: { f1: 1, ls: 1, ap: 1, cr: 1 }, listR: 'world' };
-const stack = [];
-let vb = null, lastR = null;
-const svg = $('map');
+// ── state: the list is the app; one company at a time opens in place
+let st = { sel: null, open: null, r: null, kinds: { f1: 1, ls: 1, ap: 1, cr: 1 } };
+let vb = null, lastR = null, svg = null;
 const el = (t, a = {}, p) => { const e = document.createElementNS(NS, t); for (const k in a) e.setAttribute(k, a[k]); p && p.appendChild(e); return e; };
-
-const listFor = r => COMPANIES.filter(c => st.kinds[c.kind] && (r === 'world' || c.region === r));
-function snapshot() { return JSON.parse(JSON.stringify(st)); }
-let motion = null, homeScroll = 0;   // motion = { dir, flip } consumed by the next go()
-const rectOf = el => el ? { r: el.getBoundingClientRect(), fs: parseFloat(getComputedStyle(el).fontSize) } : null;
-function nav(patch, src) { stack.push(snapshot()); motion = { dir: 1, flip: rectOf(src) }; st = { ...st, open: null, ...patch }; go(true); }
-function pick(id, src) { const c = CO[id]; if (st.view === 'home') homeScroll = scrollY; nav({ view: 'co', sel: id, uni: null, r: c.region, listR: st.view === 'home' ? st.r : st.listR }, src); }
-function pickUni(id, src) { const u = UNIS[id]; nav({ view: 'uni', uni: id, sel: null, r: u.region || st.r }, src); }
-function home(r) { stack.length = 0; motion = { dir: 0 }; st = { ...st, view: 'home', r, sel: null, uni: null, open: null, listR: r }; go(); }
-// back to the company list: the name flies from the pill back into its row
-function toList() {
-  const from = st.sel, pillName = rectOf($('pname'));
-  stack.length = 0; motion = { dir: -1, back: { id: from, rect: pillName }, restore: homeScroll };
-  st = { ...st, view: 'home', r: st.listR || 'world', sel: null, uni: null, open: null };
-  go();
-}
-function back() { if (stack.length) { motion = { dir: -1 }; st = stack.pop(); go(true); } else toList(); }
+const listAll = () => COMPANIES.filter(c => st.kinds[c.kind]).sort((a, b) => 'f1lsapcr'.indexOf(a.kind) - 'f1lsapcr'.indexOf(b.kind) || a.name.localeCompare(b.name));
+const rectOf = e => e ? { r: e.getBoundingClientRect(), fs: parseFloat(getComputedStyle(e).fontSize) } : null;
+const rowEl = id => document.querySelector(`.row.co[data-id="${id}"]`);
 
 // ── map
 function base() {
@@ -363,15 +346,11 @@ function base() {
 // keep marks a constant screen size: z(px) → viewBox units
 function unit() { const w = svg.clientWidth || 380; return vb[2] / w; }
 
-function focusIds() {
-  if (st.view === 'co') return [st.sel, ...CO[st.sel].feeders.map(f => f[0])];
-  if (st.view === 'uni') return [st.uni, ...(FEEDS[st.uni] || []).map(f => f.c.id)];
-  return [];
-}
+function focusIds() { return st.sel ? [st.sel, ...CO[st.sel].feeders.map(f => f[0])] : []; }
 function focusBox() {
   const R = G[st.r], P = PTS[st.r];
   const ids = focusIds().filter(i => P[i]);
-  if (st.view === 'home' || st.r === 'world' || ids.length < 1) return [0, 0, R.w, R.h];
+  if (ids.length < 1) return [0, 0, R.w, R.h];
   let x0 = 1e9, y0 = 1e9, x1 = -1e9, y1 = -1e9;
   ids.forEach(i => { const [x, y] = P[i]; x0 = Math.min(x0, x); y0 = Math.min(y0, y); x1 = Math.max(x1, x); y1 = Math.max(y1, y); });
   const asp = R.w / R.h, minW = R.w / MINW[st.r];
@@ -401,19 +380,17 @@ function dodge(items, u, sep) {
 }
 
 function pins() {
+  if (!svg || !st.sel) return;
   const R = G[st.r], P = PTS[st.r], g = svg.querySelector('#pins'), over = svg.querySelector('#over');
   g.innerHTML = ''; over.innerHTML = '';
   const u = unit(), z = v => v * u;
   const fset = new Set(focusIds());
-  const focus = st.view !== 'home';
-  const vis = new Set(listFor('world').map(c => c.id));
-
-  if (st.r === 'world') return worldPins(g, over, z, vis);
+  const focus = true;
 
   // what to draw
   const items = [];
   for (const id in UNIS) { if (!P[id]) continue; const on = fset.has(id); items.push({ id, t: 'uni', x: P[id][0], y: P[id][1], on, dim: focus && !on }); }
-  for (const c of COMPANIES) { if (!P[c.id]) continue; const on = focus ? fset.has(c.id) : vis.has(c.id); items.push({ id: c.id, t: c.kind, x: P[c.id][0], y: P[c.id][1], on, dim: !on }); }
+  for (const c of COMPANIES) { if (!P[c.id]) continue; const on = fset.has(c.id); items.push({ id: c.id, t: c.kind, x: P[c.id][0], y: P[c.id][1], on, dim: !on }); }
   const active = items.filter(i => !i.dim), dimmed = items.filter(i => i.dim);
   const placed = dodge(active, u, focus ? 15 : 11);
   const pos = Object.fromEntries(placed.map(p => [p.id, [p.dx, p.dy]]));
@@ -423,12 +400,11 @@ function pins() {
     if (it.t === 'uni') el('circle', { cx: it.x, cy: it.y, r: z(2.4), fill: 'none', stroke: 'var(--mut)', 'stroke-width': z(1), opacity: .45 }, g);
     else el('path', { d: shapePath(it.t, it.x, it.y, z(3.2)), fill: 'var(--mut)', opacity: .45 }, g);
     const hit = el('circle', { cx: it.x, cy: it.y, r: z(10), fill: 'transparent', style: 'cursor:pointer' }, g);
-    hit.onclick = () => it.t === 'uni' ? pickUni(it.id) : pick(it.id);
+    hit.onclick = () => it.t === 'uni' ? null : openCo(it.id);
   }
   // pipeline lines
   const linkTo = (a, b, s) => el('line', { x1: a[0], y1: a[1], x2: b[0], y2: b[1], stroke: 'var(--ink)', 'stroke-width': z(s === 3 ? 2 : s === 2 ? 1.1 : 1), 'stroke-dasharray': s === 1 ? `${z(3)} ${z(3)}` : '', 'stroke-opacity': s === 3 ? .9 : .6 }, over);
-  if (st.view === 'co') CO[st.sel].feeders.forEach(([id, s]) => { if (pos[id]) linkTo(pos[st.sel], pos[id], s); });
-  if (st.view === 'uni') (FEEDS[st.uni] || []).forEach(f => { if (pos[f.c.id]) linkTo(pos[st.uni], pos[f.c.id], f.s); });
+  CO[st.sel].feeders.forEach(([id, s]) => { if (pos[id]) linkTo(pos[st.sel], pos[id], s); });
 
   const labels = [];
   for (const p of placed) {
@@ -437,7 +413,7 @@ function pins() {
       el('circle', { cx: p.x, cy: p.y, r: z(1.4), fill: 'var(--mut)' }, g);
     }
     const isUni = p.t === 'uni';
-    const hot = (st.view === 'co' && p.id === st.sel) || (st.view === 'uni' && p.id === st.uni) || st.open === p.id;
+    const hot = p.id === st.sel || st.open === p.id;
     if (isUni) {
       const strong = focus;
       el('circle', { cx: p.dx, cy: p.dy, r: z(hot ? 6 : strong ? 4.6 : 3), fill: 'var(--bg)', stroke: 'var(--ink)', 'stroke-width': z(hot ? 2.2 : strong ? 1.6 : 1.1), opacity: strong ? 1 : .7 }, g);
@@ -450,48 +426,9 @@ function pins() {
       labels.push({ x: p.dx, y: p.dy, t: c.name, s: hot ? 15 : 13, w: 600, c: 'var(--ink)', pri: 0, lp: c.label, off: hot ? 11 : 9 });
     }
     const hit = el('circle', { cx: p.dx, cy: p.dy, r: z(14), fill: 'transparent', style: 'cursor:pointer' }, g);
-    hit.onclick = () => isUni ? pickUni(p.id) : pick(p.id);
-  }
-  // Motorsport Valley marker on the Europe map
-  if (st.r === 'eu' && !focus) {
-    const [x, y] = PROJ.eu([-1.15, 52.1]); const n = listFor('uk').length;
-    if (n) {
-      el('circle', { cx: x, cy: y, r: z(11), fill: 'var(--bg)', stroke: 'var(--ink)', 'stroke-width': z(1.2), 'stroke-dasharray': `${z(2)} ${z(2)}` }, g);
-      el('text', { x, y: y + z(4), 'text-anchor': 'middle', 'font-size': z(11), fill: 'var(--ink)', class: 'lbl', 'font-family': 'Space Mono, monospace' }, g).textContent = n;
-      const h = el('circle', { cx: x, cy: y, r: z(18), fill: 'transparent', style: 'cursor:pointer' }, g); h.onclick = () => home('uk');
-      labels.push({ x, y, t: 'UK cluster', s: 12, w: 500, c: 'var(--ink)', pri: 0, lp: 'r', off: 15 });
-    }
+    hit.onclick = () => isUni ? toggleSchool(p.id) : p.id !== st.sel && openCo(p.id);
   }
   place(labels, g, z);
-}
-
-function worldPins(g, over, z, vis) {
-  const P = PTS.world;
-  for (const r of ['uk', 'eu', 'us', 'cr']) {
-    const [a, b, c, d] = G[r].bb, ring = [];
-    for (let i = 0; i <= 12; i++) ring.push([a + (c - a) * i / 12, b]);
-    for (let i = 0; i <= 12; i++) ring.push([c, b + (d - b) * i / 12]);
-    for (let i = 12; i >= 0; i--) ring.push([a + (c - a) * i / 12, d]);
-    for (let i = 12; i >= 0; i--) ring.push([a, b + (d - b) * i / 12]);
-    const pts = ring.map(q => PROJ.world(q));
-    let x0 = Math.min(...pts.map(p => p[0])), y0 = Math.min(...pts.map(p => p[1]));
-    const pad = z(5); const xs = pts.map(p => p[0]), ys = pts.map(p => p[1]);
-    let X0 = Math.min(...xs) - pad, Y0 = Math.min(...ys) - pad, X1 = Math.max(...xs) + pad, Y1 = Math.max(...ys) + pad;
-    const n = listFor(r).length;
-    el('rect', { x: X0, y: Y0, width: X1 - X0, height: Y1 - Y0, rx: z(5), class: 'frame', fill: 'transparent', 'stroke-opacity': n ? 1 : .3 }, over);
-    const tx = el('text', { x: r === 'eu' ? X1 + z(4) : X0, y: Y0 - z(5), 'font-size': z(11), fill: 'var(--ink)', class: 'lbl', 'stroke-width': z(3), 'text-anchor': 'start' }, over);
-    tx.textContent = `${REG[r].toUpperCase()} ${pad2(n)}`;
-    if (r === 'eu') { tx.setAttribute('y', Y0 + z(9)); }
-    if (r === 'uk') { tx.setAttribute('text-anchor', 'end'); tx.setAttribute('x', X0 - z(3)); tx.setAttribute('y', Y0 + z(9)); }
-    const hit = el('rect', { x: X0, y: Y0, width: X1 - X0, height: Y1 - Y0, fill: 'transparent', style: 'cursor:pointer' }, over);
-    hit.onclick = () => home(r);
-  }
-  for (const c of COMPANIES) {
-    if (!vis.has(c.id)) continue; const [x, y] = P[c.id];
-    el('path', { d: shapePath(c.kind, x, y, z(2.6)), fill: 'var(--ink)', stroke: 'var(--bg)', 'stroke-width': z(.6) }, g);
-  }
-  const a = P.auckland; el('circle', { cx: a[0], cy: a[1], r: z(2.6), fill: 'var(--bg)', stroke: 'var(--ink)', 'stroke-width': z(1) }, g);
-  el('text', { x: a[0] - z(5), y: a[1] + z(3.5), 'font-size': z(10), 'text-anchor': 'end', fill: 'var(--mut)', class: 'lbl', 'stroke-width': z(3) }, g).textContent = 'Auckland';
 }
 
 // greedy label placement: preferred side, then r/l/t/b; lowest overlap wins
@@ -520,8 +457,10 @@ function place(L, g, z) {
 }
 
 function scaleBar() {
+  if (!svg) return;
   const g = svg.querySelector('#scale'); g.innerHTML = '';
-  const coord = $('coord');
+  if (!svg || !vb) return;
+  const coord = svg.parentNode.querySelector('.coord');
   const p = PROJ[st.r], u = unit(), z = v => v * u;
   const cx = vb[0] + vb[2] / 2, cy = vb[1] + vb[3] / 2, c = p.invert([cx, cy]);
   coord.textContent = c ? `${Math.abs(c[1]).toFixed(2)}°${c[1] >= 0 ? 'N' : 'S'} ${Math.abs(c[0]).toFixed(2)}°${c[0] >= 0 ? 'E' : 'W'}` : '';
@@ -536,215 +475,174 @@ function scaleBar() {
 let vbAnim = null;
 function zoomTo(t) {
   const v0 = vbAnim ? vbAnim.stop() : null; vbAnim = null;
+  if (!svg) return;
   const done = () => { pins(); scaleBar(); };
   if (!vb || reduce()) { vb = t; svg.setAttribute('viewBox', vb.join(' ')); return done(); }
   svg.querySelector('#scale').innerHTML = '';
   vbAnim = spring(vb.slice(), t, { v0, onUpdate: x => { vb = x.map((v, i) => i > 1 ? Math.max(v, 1) : v); svg.setAttribute('viewBox', vb.join(' ')); pins(); }, onDone: () => { vbAnim = null; done(); } });
 }
 
-// panel content slides in from the side it came from, staggered, on the spring
-let slideAnim = null;
-function slideIn(dir) {
-  if (slideAnim) slideAnim.stop();
-  const els = [...$('panel').children, $('stats')];
-  const clear = () => els.forEach(e => { e.style.transform = ''; e.style.opacity = ''; });
-  if (reduce()) return clear();
-  const dx = dir * 44, dy = dir ? 0 : 14, lag = .07;
-  const apply = p => els.forEach((e, i) => { const q = Math.max(0, (p - i * lag) / (1 - i * lag)); e.style.transform = `translate(${(1 - q) * dx}px,${(1 - q) * dy}px)`; e.style.opacity = Math.min(1, q * 1.4); });
-  apply(0);
-  slideAnim = spring([0], [1], { onUpdate: ([p]) => apply(p), onDone: () => { slideAnim = null; clear(); } });
-}
 // shared-element move: text flies from one rect into its new place
-function flyFrom(el, f) {
-  if (!el || !f || reduce()) return;
-  const r1 = el.getBoundingClientRect(), fs1 = parseFloat(getComputedStyle(el).fontSize);
-  let dx = f.r.left - r1.left, dy = f.r.top - r1.top;
-  const lim = innerHeight; if (r1.top + dy > lim) dy = lim - r1.top; if (r1.top + dy < -80) dy = -80 - r1.top;
-  el.style.transformOrigin = '0 0';
-  spring([dx, dy, f.fs / fs1], [0, 0, 1], { onUpdate: ([x, y, s]) => { el.style.transform = `translate(${x}px,${y}px) scale(${s})`; }, onDone: () => { el.style.transform = ''; } });
+function flyFrom(e, f) {
+  if (!e || !f || reduce()) return;
+  const r1 = e.getBoundingClientRect(), fs1 = parseFloat(getComputedStyle(e).fontSize);
+  const dx = f.r.left - r1.left, dy = f.r.top - r1.top;
+  e.style.transformOrigin = '0 0';
+  spring([dx, dy, f.fs / fs1], [0, 0, 1], { onUpdate: ([x, y, s]) => { e.style.transform = `translate(${x}px,${y}px) scale(${s})`; }, onDone: () => { e.style.transform = ''; } });
+}
+// page scroll on the spring; any touch or wheel hands control back to the reader
+let scrollAnim = null;
+function springScroll(y) {
+  if (scrollAnim) scrollAnim.stop(); scrollAnim = null;
+  y = Math.max(0, y);
+  if (Math.abs(scrollY - y) < 2) return;
+  if (reduce()) return scrollTo(0, y);
+  scrollAnim = spring([scrollY], [y], { onUpdate: ([v]) => scrollTo(0, v), onDone: () => { scrollAnim = null; } });
+}
+['wheel', 'touchstart', 'keydown'].forEach(t => addEventListener(t, () => { if (scrollAnim) { scrollAnim.stop(); scrollAnim = null; } }, { passive: true }));
+// height on the spring (overflow clipped only while moving, so the sticky bar works at rest)
+function springHeight(e, from, to, done) {
+  if (e._h) e._h.stop();
+  if (reduce()) { e.style.height = ''; e.style.overflow = ''; done && done(); return; }
+  e.style.overflow = 'hidden'; e.style.height = from + 'px';
+  e._h = spring([from], [to], { onUpdate: ([h]) => { e.style.height = Math.max(0, h) + 'px'; }, onDone: () => { e._h = null; e.style.height = ''; e.style.overflow = ''; done && done(); } });
 }
 
-// ── pill + cards + panel
-function ring(frac, text) {
-  const C = 219.9; $('ringfg').style.strokeDashoffset = C * (1 - Math.max(0, Math.min(1, frac)));
-  $('ringtx').textContent = text;
-}
-function setName(t) { const n = $('pname'); n.textContent = t; n.className = 'pname' + (t.length > 22 ? ' xs' : t.length > 14 ? ' s' : ''); }
-
-function tabs() {
-  const t = $('tabs'); t.innerHTML = '';
-  for (const r in REG) {
-    const b = document.createElement('button'); b.className = 'tab'; b.textContent = REG[r];
-    b.setAttribute('aria-pressed', st.r === r); b.onclick = () => home(r); t.appendChild(b);
-  }
-  $('legend').innerHTML = ['f1', 'ls', 'ap', 'cr'].map(k => `<span>${glyph(k)}${KIND[k].n}</span>`).join('') + `<span>${glyph('uni')}University</span>`;
+// ── filters (the header)
+function renderFilters() {
+  const kinds = ['f1', 'ls', 'ap', 'cr'];
+  $('filters').innerHTML = kinds.map(k => {
+    const n = COMPANIES.filter(c => c.kind === k).length, on = !!st.kinds[k];
+    return `<div class="row"><button class="rowbtn" data-k="${k}" aria-pressed="${on}"><span class="g">${glyph(k)}</span><span class="rn${on ? ' b' : ''}">${KIND[k].n}</span><span class="num">${pad2(n)}</span><span class="sw${on ? ' on' : ''}"><i></i><b>${on ? 'ON' : 'OFF'}</b></span></button></div>`;
+  }).join('');
+  $('filters').querySelectorAll('[data-k]').forEach(b => b.onclick = () => {
+    const k = b.dataset.k; st.kinds = { ...st.kinds, [k]: st.kinds[k] ? 0 : 1 };
+    if (st.sel && !st.kinds[CO[st.sel].kind]) collapseNow();
+    renderFilters(); renderList();
+  });
 }
 
-function topFeeders(list) {
-  const score = {};
-  list.forEach(c => c.feeders.forEach(([u, s]) => { score[u] = score[u] || { s: 0, n: 0 }; score[u].s += s; score[u].n++; }));
-  return Object.entries(score).sort((a, b) => b[1].s - a[1].s || b[1].n - a[1].n).slice(0, 4);
+// ── company list
+function rowHTML(c) {
+  return `<div class="row co" data-id="${c.id}"><button class="rowbtn" data-c="${c.id}" aria-expanded="false"><span class="g">${glyph(c.kind)}</span><span class="rn">${c.name}<span class="rc">${c.city}</span></span><span class="num">${pad2(c.feeders.length)}</span>${chev}</button></div>`;
+}
+function renderList() {
+  const list = listAll(), keep = st.sel;
+  $('count').textContent = `${pad2(list.length)} · tap one to open`;
+  if (keep) collapseNow();
+  $('list').innerHTML = list.map(rowHTML).join('') || '<p class="prog" style="padding:14px 2px">Every category is switched off. Turn one on above.</p>';
+  $('list').querySelectorAll('.rowbtn[data-c]').forEach(b => b.onclick = () => openCo(b.dataset.c));
+  if (keep && list.some(c => c.id === keep)) openCo(keep, true);
 }
 
-const illo = {
-  f1: `<svg class="illo" viewBox="0 0 120 70"><path d="M6 66V8a5 5 0 0 1 10 0v54a5 5 0 0 0 10 0V8a5 5 0 0 1 10 0v54a5 5 0 0 0 10 0V8a5 5 0 0 1 10 0v54a5 5 0 0 0 10 0V8a5 5 0 0 1 10 0v54a5 5 0 0 0 10 0V8a5 5 0 0 1 10 0v54a5 5 0 0 0 10 0V8"/></svg>`,
-  ls: `<svg class="illo" viewBox="0 0 120 70"><path d="M60 3c9 8 13 20 13 34v20H47V37c0-14 4-26 13-34zM47 44l-10 13h10M73 44l10 13H73M53 57l-3 9M60 57v10M67 57l3 9"/><circle cx="60" cy="27" r="5"/></svg>`,
-  ap: `<svg class="illo" viewBox="0 0 120 70"><circle cx="60" cy="35" r="31"/><circle cx="60" cy="35" r="7"/><path d="M60 28V5M66 32l20-12M66 39l20 12M60 42v23M54 39L34 51M54 32L34 20"/></svg>`,
-  cr: `<svg class="illo" viewBox="0 0 120 70"><path d="M8 35h14M98 35h14"/><path d="M22 35c0-14 8-14 8 0s8 14 8 0 8-14 8 0 8 14 8 0 8-14 8 0 8 14 8 0 8-14 8 0 8 14 8 0"/><path d="M22 20h76M22 50h76" stroke-dasharray="3 4"/></svg>`
-};
-
-function statsHome(list) {
-  const schools = new Set(); let main = 0;
-  list.forEach(c => c.feeders.forEach(([u, s]) => { schools.add(u); if (s === 3) main++; }));
-  const top = topFeeders(list);
-  $('stats').innerHTML = `
-    <div class="card"><div class="lab">On this map</div>
-      <div class="lab m" style="margin-top:12px">Companies</div><div class="val">${pad2(list.length)}</div>
-      <div class="lab m" style="margin-top:10px">Schools</div><div class="val">${pad2(schools.size)}</div>
-      <div class="lab m" style="margin-top:10px">Main pipelines</div><div class="val">${pad2(main)}</div></div>
-    <div class="card"><div class="lab">Top feeders</div><div class="lab m" style="margin-top:2px">Weighted by strength</div>
-      <div class="mini">${top.map(([u, v]) => `<button data-u="${u}"><span>${UNIS[u].short}</span><span class="num">${pad2(v.n)}</span></button>`).join('') || '<span class="lab m">None</span>'}</div></div>`;
-  $('stats').querySelectorAll('[data-u]').forEach(b => b.onclick = () => pickUni(b.dataset.u));
-}
-
-function statsCo(c) {
-  const main = c.feeders.filter(f => f[1] === 3).length;
-  const away = c.feeders.filter(f => UNIS[f[0]].region !== c.region).length;
-  $('stats').innerHTML = `
-    <div class="card"><div class="lab">Pipeline</div>
-      <div class="lab m" style="margin-top:12px">Schools</div><div class="val">${pad2(c.feeders.length)}</div>
-      <div class="lab m" style="margin-top:10px">Main</div><div class="val">${pad2(main)}</div>
-      <div class="lab m" style="margin-top:10px">Other regions</div><div class="val">${pad2(away)}</div></div>
-    <div class="card"><div class="lab">${KIND[c.kind].n}</div><div class="lab m">${REGLONG[c.region]}</div>${illo[c.kind]}</div>`;
-}
-
-function statsUni(id) {
-  const f = FEEDS[id] || [], cnt = k => f.filter(x => x.c.kind === k).length;
-  $('stats').innerHTML = `
-    <div class="card"><div class="lab">Hires from here</div>
-      <div class="lab m" style="margin-top:12px">Formula 1</div><div class="val">${pad2(cnt('f1'))}</div>
-      <div class="lab m" style="margin-top:10px">Launch & space</div><div class="val">${pad2(cnt('ls') + cnt('cr'))}</div>
-      <div class="lab m" style="margin-top:10px">Primes</div><div class="val">${pad2(cnt('ap'))}</div></div>
-    <div class="card"><div class="lab">Program to look at</div><p class="angle" style="font-size:14.5px">${UNIS[id].program}</p></div>`;
-}
-
-function panelHome() {
-  const P = $('panel');
-  const all = COMPANIES.filter(c => st.r === 'world' || c.region === st.r);
-  const list = listFor(st.r).slice().sort((a, b) => 'f1lsapcr'.indexOf(a.kind) - 'f1lsapcr'.indexOf(b.kind) || a.name.localeCompare(b.name));
-  const kinds = ['f1', 'ls', 'ap', 'cr'].filter(k => all.some(c => c.kind === k));
-  P.innerHTML = `
-    <div>
-      <div class="addrow"><span>Show</span><span class="m">${REGLONG[st.r]}</span></div>
-      <div class="rows filters">${kinds.map(k => {
-        const n = all.filter(c => c.kind === k).length, on = !!st.kinds[k];
-        return `<div class="row"><button class="rowbtn" data-k="${k}" aria-pressed="${on}"><span class="g">${glyph(k)}</span><span class="rn${on ? ' b' : ''}">${KIND[k].n}</span><span class="num">${pad2(n)}</span><span class="sw${on ? ' on' : ''}"><i></i><b>${on ? 'ON' : 'OFF'}</b></span></button></div>`;
-      }).join('')}</div>
-    </div>
-    <div>
-      <div class="addrow"><span>Companies</span><span class="m">Tap one for its schools</span></div>
-      <div class="rows">${list.map(c => `<div class="row"><button class="rowbtn" data-c="${c.id}"><span class="g">${glyph(c.kind)}</span><span class="rn">${c.name}<span class="rc">${c.city}</span></span><span class="num">${pad2(c.feeders.length)}</span>${chev}</button></div>`).join('') || '<p class="prog" style="padding:14px 2px">Every category is switched off. Turn one on above.</p>'}</div>
-    </div>`;
-  P.querySelectorAll('[data-k]').forEach(b => b.onclick = () => { const k = b.dataset.k; st.kinds = { ...st.kinds, [k]: st.kinds[k] ? 0 : 1 }; go(); });
-  P.querySelectorAll('[data-c]').forEach(b => b.onclick = () => pick(b.dataset.c, b.querySelector('.rn')));
-  statsHome(list);
-  setName(REGLONG[st.r]);
-  $('psub').innerHTML = `${list.length} ${list.length === 1 ? 'company' : 'companies'} hiring here<br><span>Tap a company to see its schools.</span>`;
-  const tot = listFor('world').length || 1;
-  ring(list.length / tot, `${Math.round(list.length / tot * 100)}%`);
-}
-
+// ── the open company: pill, map, angle, schools
 function alsoFeeds(uniId, exceptId) {
   return (FEEDS[uniId] || []).filter(f => f.c.id !== exceptId).sort((a, b) => b.s - a.s)
     .map(f => `<button class="chip" data-go="${f.c.id}">${glyph(f.c.kind)}${f.c.name}</button>`).join('');
 }
-
-function panelCo() {
-  const c = CO[st.sel], P = $('panel');
-  const regTag = id => { const u = UNIS[id]; return u.region === c.region ? '' : `<span class="tagx">${u.region ? REG[u.region] : 'off map'}</span>`; };
-  P.innerHTML = `
+function feedersHTML(c) {
+  const tag = id => { const u = UNIS[id]; return u.region === c.region ? '' : `<span class="tagx">${u.region ? REG[u.region] : 'off map'}</span>`; };
+  return c.feeders.slice().sort((a, b) => b[1] - a[1]).map(([id, s, w]) => {
+    const u = UNIS[id], open = st.open === id, also = alsoFeeds(id, c.id);
+    return `<div class="row${open ? ' open' : ''}"><button class="rowbtn" data-u="${id}" aria-expanded="${open}"><span class="g">${glyph('uni')}</span><span class="rn${s === 3 ? ' b' : ''}">${u.short}${tag(id)}<span class="rc">${u.city}</span></span><span class="str s${s}">${SL[s]}</span>${chev}</button>
+      ${open ? `<div class="detail"><p class="why">${w}</p><p class="prog">${u.name} · ${u.program}</p>${also ? `<div class="lab m" style="margin-top:4px">${u.short} also feeds</div><div class="chips">${also}</div>` : ''}</div>` : ''}</div>`;
+  }).join('');
+}
+function detailHTML(c) {
+  const n = c.name, cls = n.length > 22 ? ' xs' : n.length > 14 ? ' s' : '';
+  return `<div class="expin">
+    <button class="backbar"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12.5 4.5L7 10l5.5 5.5"/></svg><span class="bn">All companies</span><span class="num">${pad2(listAll().length)}</span></button>
+    <div class="pill"><span class="badge">${glyph(c.kind)}</span><div class="pmain"><div style="min-width:0"><div class="pname${cls}">${n}</div><div class="psub">${KIND[c.kind].one}<br><span>${c.city}</span></div></div></div>
+      <div class="ring" aria-hidden="true"><svg viewBox="0 0 80 80"><circle class="tr" cx="40" cy="40" r="35" fill="none" stroke-width="4"/><circle class="fg" cx="40" cy="40" r="35" fill="none" stroke-width="4" stroke-linecap="round" stroke-dasharray="219.9" stroke-dashoffset="219.9"/></svg><b></b></div></div>
+    <div class="card mapcard"><div class="maphead"><span class="lab">${REGLONG[c.region]}</span><span class="coord"></span></div><svg class="map" role="img" aria-label="Map of ${n} and its feeder schools"></svg>
+      <div class="legend">${['f1', 'ls', 'ap', 'cr'].map(k => `<span>${glyph(k)}${KIND[k].n}</span>`).join('')}<span>${glyph('uni')}University</span></div></div>
     <div class="card"><div class="lab">Electromechanical angle</div><p class="angle">${c.angle}</p></div>
-    <div>
-      <div class="addrow"><span>Feeder schools</span><span class="m">${pad2(c.feeders.length)} · strongest first</span></div>
-      <div class="rows">${c.feeders.slice().sort((a, b) => b[1] - a[1]).map(([id, s, w]) => {
-        const u = UNIS[id], open = st.open === id, also = alsoFeeds(id, c.id);
-        return `<div class="row${open ? ' open' : ''}"><button class="rowbtn" data-u="${id}" aria-expanded="${open}"><span class="g">${glyph('uni')}</span><span class="rn${s === 3 ? ' b' : ''}">${u.short}${regTag(id)}<span class="rc">${u.city}</span></span><span class="str s${s}">${SL[s]}</span>${chev}</button>
-          ${open ? `<div class="detail"><p class="why">${w}</p><p class="prog">${u.name} · ${u.program}</p>${also ? `<div class="lab m" style="margin-top:4px">Also feeds</div><div class="chips">${also}</div>` : ''}<div class="chips"><button class="chip solid" data-uni="${id}">${glyph('uni')}All companies hiring from ${u.short}</button></div></div>` : ''}</div>`;
-      }).join('')}</div>
-    </div>`;
-  P.querySelectorAll('[data-u]').forEach(b => b.onclick = () => { st.open = st.open === b.dataset.u ? null : b.dataset.u; panelCo(); pins(); });
-  P.querySelectorAll('[data-go]').forEach(b => b.onclick = () => pick(b.dataset.go));
-  P.querySelectorAll('[data-uni]').forEach(b => b.onclick = () => pickUni(b.dataset.uni));
-  statsCo(c);
-  setName(c.name);
-  $('psub').innerHTML = `${KIND[c.kind].one}<br><span>${c.city}</span>`;
+    <div><div class="addrow"><span>Feeder schools</span><span class="m">${pad2(c.feeders.length)} · strongest first</span></div><div class="rows feeders">${feedersHTML(c)}</div></div>
+  </div>`;
+}
+function bindFeeders(row, c) {
+  row.querySelectorAll('[data-u]').forEach(b => b.onclick = () => toggleSchool(b.dataset.u));
+  row.querySelectorAll('[data-go]').forEach(b => b.onclick = () => openCo(b.dataset.go));
+}
+function toggleSchool(id) {
+  const c = CO[st.sel], row = rowEl(st.sel); if (!c || !row) return;
+  if (!c.feeders.some(f => f[0] === id)) return;
+  st.open = st.open === id ? null : id;
+  const box = row.querySelector('.feeders'), h0 = row.offsetHeight;
+  box.innerHTML = feedersHTML(c); bindFeeders(row, c);
+  springHeight(row, h0, row.scrollHeight);
+  pins();
+}
+
+// collapse without animation (used before opening another row above, or on re-render)
+function collapseNow() {
+  const row = st.sel && rowEl(st.sel);
+  if (vbAnim) { vbAnim.stop(); vbAnim = null; }
+  if (row) { if (row._h) row._h.stop(); row.querySelector('.exp')?.remove(); row.querySelector('.rowbtn').hidden = false; row.querySelector('.rowbtn').setAttribute('aria-expanded', 'false'); row.classList.remove('open'); row.style.height = ''; row.style.overflow = ''; }
+  st.sel = null; st.open = null; svg = null; lastR = null;
+}
+
+function openCo(id, instant) {
+  if (st.sel === id && !instant) return closeCo();
+  let row = rowEl(id);
+  if (!row) { // filtered out: switch its category back on first
+    st.kinds = { ...st.kinds, [CO[id].kind]: 1 }; renderFilters(); renderList(); row = rowEl(id); if (!row) return;
+  }
+  // close the one that's open; if it sits above, keep the tapped row still on screen
+  if (st.sel) {
+    const prev = rowEl(st.sel);
+    if (prev && (prev.compareDocumentPosition(row) & Node.DOCUMENT_POSITION_FOLLOWING)) {
+      const before = row.getBoundingClientRect().top; collapseNow(); scrollBy(0, row.getBoundingClientRect().top - before);
+    } else if (prev) closeCo(true); else collapseNow();
+  }
+  const c = CO[id], btn = row.querySelector('.rowbtn');
+  const from = rectOf(btn.querySelector('.rn')), h0 = row.offsetHeight;
+  st.sel = id; st.open = null; st.r = c.region;
+  const exp = document.createElement('div'); exp.className = 'exp'; exp.innerHTML = detailHTML(c);
+  row.appendChild(exp); btn.hidden = true; btn.setAttribute('aria-expanded', 'true'); row.classList.add('open');
+  exp.querySelector('.backbar').onclick = () => closeCo();
+  bindFeeders(row, c);
+
+  // the map starts on the whole region, then springs in on the company
+  svg = exp.querySelector('svg.map'); lastR = st.r; base();
+  const R = G[st.r]; vb = [0, 0, R.w, R.h]; svg.setAttribute('viewBox', vb.join(' ')); pins();
+
   const main = c.feeders.filter(f => f[1] === 3).length;
-  ring(main / c.feeders.length, `${main}/${c.feeders.length}`);
-}
+  exp.querySelector('.ring b').textContent = `${main}/${c.feeders.length}`;
+  requestAnimationFrame(() => requestAnimationFrame(() => { exp.querySelector('.ring .fg').style.strokeDashoffset = 219.9 * (1 - main / c.feeders.length); }));
 
-function panelUni() {
-  const u = UNIS[st.uni], f = (FEEDS[st.uni] || []).slice().sort((a, b) => b.s - a.s || a.c.name.localeCompare(b.c.name)), P = $('panel');
-  P.innerHTML = `
-    <div>
-      <div class="addrow"><span>Companies hiring from here</span><span class="m">${pad2(f.length)}</span></div>
-      <div class="rows">${f.map(x => `<div class="row"><button class="rowbtn" data-c="${x.c.id}"><span class="g">${glyph(x.c.kind)}</span><span class="rn${x.s === 3 ? ' b' : ''}">${x.c.name}${x.c.region !== u.region ? `<span class="tagx">${REG[x.c.region]}</span>` : ''}<span class="rc">${x.w}</span></span><span class="str s${x.s}">${SL[x.s]}</span>${chev}</button></div>`).join('')}</div>
-    </div>`;
-  P.querySelectorAll('[data-c]').forEach(b => b.onclick = () => pick(b.dataset.c, b.querySelector('.rn')));
-  statsUni(st.uni);
-  setName(u.short);
-  $('psub').innerHTML = `${u.name}<br><span>${u.city}</span>`;
-  const main = f.filter(x => x.s === 3).length;
-  ring(f.length ? main / f.length : 0, `${main}/${f.length}`);
-}
-
-function steppers() {
-  const prev = $('prev'), next = $('next');
-  prev.hidden = next.hidden = st.view === 'uni';
-  if (st.view === 'home') {
-    const keys = Object.keys(REG), i = keys.indexOf(st.r);
-    prev.setAttribute('aria-label', 'Previous region'); next.setAttribute('aria-label', 'Next region');
-    prev.onclick = () => home(keys[(i - 1 + keys.length) % keys.length]);
-    next.onclick = () => home(keys[(i + 1) % keys.length]);
-  } else if (st.view === 'co') {
-    let list = listFor(st.listR || 'world'); if (!list.some(c => c.id === st.sel)) list = COMPANIES;
-    list = list.slice().sort((a, b) => 'f1lsapcr'.indexOf(a.kind) - 'f1lsapcr'.indexOf(b.kind) || a.name.localeCompare(b.name));
-    const i = list.findIndex(c => c.id === st.sel);
-    const to = j => { const c = list[(j + list.length) % list.length]; st = { ...st, sel: c.id, r: c.region, open: null }; go(); };
-    prev.setAttribute('aria-label', 'Previous company'); next.setAttribute('aria-label', 'Next company');
-    prev.onclick = () => { motion = { dir: -1 }; to(i - 1); }; next.onclick = () => { motion = { dir: 1 }; to(i + 1); };
+  if (instant) { zoomTo(focusBox()); return; }
+  springHeight(row, h0, row.scrollHeight);
+  flyFrom(exp.querySelector('.pname'), from);
+  // the pieces below the pill arrive one after another
+  if (!reduce()) {
+    const parts = [...exp.querySelector('.expin').children].slice(2), lag = .08;
+    const apply = p => parts.forEach((e, i) => { const q = Math.max(0, (p - i * lag) / (1 - i * lag)); e.style.transform = `translateY(${(1 - q) * 26}px) scale(${.97 + .03 * Math.min(q, 1.02)})`; e.style.opacity = Math.min(1, q * 1.5); });
+    apply(0); spring([0], [1], { onUpdate: ([p]) => apply(p), onDone: () => parts.forEach(e => { e.style.transform = ''; e.style.opacity = ''; }) });
+    const bar = exp.querySelector('.backbar'); bar.style.opacity = 0;
+    spring([0], [1], { onUpdate: ([p]) => { bar.style.opacity = Math.min(1, p * 1.6); bar.style.transform = `scaleX(${.92 + .08 * p})`; }, onDone: () => { bar.style.transform = ''; bar.style.opacity = ''; } });
   }
+  setTimeout(() => zoomTo(focusBox()), reduce() ? 0 : 120);
+  springScroll(row.getBoundingClientRect().top + scrollY - 8);
 }
 
-function backbar() {
-  const b = $('backbar'), prev = stack[stack.length - 1];
-  b.hidden = st.view === 'home';
-  if (b.hidden) return;
-  const viaCo = st.view === 'uni' && prev && prev.view === 'co';
-  $('backlabel').textContent = viaCo ? `Back to ${CO[prev.sel].name}` : st.listR && st.listR !== 'world' ? `All ${REG[st.listR]} companies` : 'All companies';
-  $('backnum').textContent = viaCo ? '' : pad2(listFor(st.listR || 'world').length);
-  b.onclick = viaCo ? back : toList;
+function closeCo(keepScroll) {
+  const id = st.sel, row = id && rowEl(id); if (!row) return collapseNow();
+  if (vbAnim) { vbAnim.stop(); vbAnim = null; }
+  const exp = row.querySelector('.exp'), btn = row.querySelector('.rowbtn');
+  const from = rectOf(exp.querySelector('.pname')), h0 = row.offsetHeight;
+  st.sel = null; st.open = null; svg = null; lastR = null;
+  btn.hidden = false; btn.setAttribute('aria-expanded', 'false'); row.classList.remove('open');
+  exp.style.position = 'absolute'; exp.style.left = '0'; exp.style.right = '0'; exp.style.top = btn.offsetHeight + 'px'; exp.style.pointerEvents = 'none';
+  const h1 = btn.offsetHeight;
+  if (!reduce()) spring([1], [0], { onUpdate: ([p]) => { exp.style.opacity = Math.max(0, p * 1.4 - .4); exp.style.transform = `translateY(${(1 - p) * -18}px)`; } });
+  springHeight(row, h0, h1, () => exp.remove());
+  flyFrom(btn.querySelector('.rn'), from);
+  if (!keepScroll) { const top = row.getBoundingClientRect().top + scrollY; if (scrollY > top - 120) springScroll(top - 140); }
 }
 
-function go(scrollUp) {
-  const m = motion || { dir: 0 }; motion = null;
-  tabs();
-  if (st.r !== lastR) { if (vbAnim) { vbAnim.stop(); vbAnim = null; } base(); vb = null; lastR = st.r; }
-  steppers(); backbar();
-  if (st.view === 'co') panelCo(); else if (st.view === 'uni') panelUni(); else panelHome();
-  $('reset').hidden = st.view === 'home';
-  zoomTo(focusBox());
-  if (m.restore != null) scrollTo({ top: m.restore, behavior: 'auto' });
-  else if (scrollUp) {
-    const y = $('pill').getBoundingClientRect().top + scrollY - ($('backbar').hidden ? 12 : 90);
-    if (scrollY > y) scrollTo({ top: Math.max(0, y), behavior: m.flip || reduce() ? 'auto' : 'smooth' });
-  }
-  slideIn(m.dir);
-  if (m.flip) flyFrom($('pname'), m.flip);
-  if (m.back && m.back.id) { const row = document.querySelector(`[data-c="${m.back.id}"] .rn`); flyFrom(row, m.back.rect); }
-}
-$('reset').onclick = () => home(st.r);
-addEventListener('keydown', e => { if (e.key === 'Escape') { if (!$('sheet').hidden) closeSheet(); else if (st.view !== 'home') $('backbar').click(); } });
-let rT; addEventListener('resize', () => { clearTimeout(rT); rT = setTimeout(() => { if (vb) { pins(); scaleBar(); } }, 120); });
+addEventListener('keydown', e => { if (e.key === 'Escape') { if (!$('sheet').hidden) closeSheet(); else if (st.sel) closeCo(); } });
+let rT; addEventListener('resize', () => { clearTimeout(rT); rT = setTimeout(() => { if (svg && vb) { pins(); scaleBar(); } }, 120); });
 
 // clock + counts
 function tick() { try { $('clock').textContent = new Intl.DateTimeFormat('en-GB', { hour: '2-digit', minute: '2-digit', timeZone: 'America/Costa_Rica' }).format(new Date()); } catch (e) { $('clock').textContent = ''; } }
@@ -764,5 +662,5 @@ $('sheet').onclick = e => { if (e.target === $('sheet')) closeSheet(); };
 $('cpPrompt').onclick = () => copy(PROMPT + SOURCE, 'the app + fork note');
 $('cpRaw').onclick = () => copy(SOURCE, 'the HTML');
 
-go();
+renderFilters(); renderList();
 </script>

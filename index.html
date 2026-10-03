@@ -33,6 +33,8 @@
   --on-ink:#E8EDE4;  /* text on filled ink */
   --display:"Space Grotesk","Helvetica Neue",Arial,sans-serif;
   --mono:"Space Mono",ui-monospace,"SFMono-Regular",Menlo,monospace;
+  --spring:cubic-bezier(.34,1.3,.64,1);   /* replaced at runtime by a linear() curve sampled from SPRING */
+  --spring-dur:.5s;
   color-scheme:light;
 }
 @media (prefers-color-scheme: dark){:root:not([data-theme="light"]){
@@ -77,7 +79,7 @@ h1{font:400 clamp(40px,11vw,62px)/1 var(--display);letter-spacing:-.025em;margin
 .ring{flex:0 0 auto;width:78px;height:78px;position:relative}
 .ring svg{width:100%;height:100%;transform:rotate(-90deg)}
 .ring b{position:absolute;inset:0;display:grid;place-items:center;font:400 15px var(--mono)}
-.ring .tr{stroke:var(--hair)}.ring .fg{stroke:var(--ink);transition:stroke-dashoffset .5s cubic-bezier(.2,.7,.2,1)}
+.ring .tr{stroke:var(--hair)}.ring .fg{stroke:var(--ink);transition:stroke-dashoffset var(--spring-dur) var(--spring)}
 @media (max-width:520px){
   .pill{border-radius:36px;align-items:flex-start;padding:14px}
   .pmain{flex-wrap:wrap}
@@ -116,6 +118,16 @@ h1{font:400 clamp(40px,11vw,62px)/1 var(--display);letter-spacing:-.025em;margin
 
 @media (max-width:520px){.coord{display:none}}
 @media (max-width:959px){.left,.right{display:contents}#stats{order:1}}
+/* back bar: same height as a company row, filled ink so it reads as the way out */
+.backbar{position:sticky;top:calc(env(safe-area-inset-top,0px) + 8px);z-index:6;display:flex;align-items:center;gap:14px;width:100%;min-height:66px;padding:0 24px 0 18px;border-radius:999px;background:var(--ink);color:var(--on-ink);font:500 17px/1.2 var(--display);text-align:left;box-shadow:0 0 0 8px var(--bg);transition:transform var(--spring-dur) var(--spring)}
+.backbar svg{width:20px;height:20px;flex:0 0 auto}
+.backbar .bn{flex:1 1 auto;min-width:0}
+.backbar .num{color:var(--on-ink);opacity:.6}
+.backbar:active{transform:scale(.97)}
+.backbar:focus-visible{outline-offset:4px;border-radius:999px}
+.rowbtn{transition:transform var(--spring-dur) var(--spring)}
+.rowbtn:active{transform:scale(.985)}
+.pname{will-change:transform}
 /* panel */
 .phead{display:flex;justify-content:space-between;align-items:baseline;gap:10px;padding:4px 4px 10px}
 .back{font:500 13px var(--display);letter-spacing:.06em;text-transform:uppercase;display:flex;align-items:center;gap:6px}
@@ -129,7 +141,7 @@ h1{font:400 clamp(40px,11vw,62px)/1 var(--display);letter-spacing:-.025em;margin
 .rn.b{font-weight:600}
 .rc{display:block;font:400 13px var(--display);color:var(--mut);margin-top:2px}
 .num{font:400 15px var(--mono);font-variant-numeric:tabular-nums;color:var(--mut)}
-.chev{width:14px;height:14px;transition:transform .2s}
+.chev{width:14px;height:14px;transition:transform var(--spring-dur) var(--spring)}
 .row.open .chev{transform:rotate(90deg)}
 .detail{padding:0 2px 16px 30px;display:grid;gap:8px}
 .why{font:500 15px/1.4 var(--display);margin:0}
@@ -143,7 +155,7 @@ h1{font:400 clamp(40px,11vw,62px)/1 var(--display);letter-spacing:-.025em;margin
 
 /* toggle switch, straight from the thermostat rows */
 .sw{flex:0 0 auto;position:relative;display:inline-flex;align-items:center;width:92px;height:40px;border:1.5px solid var(--ink);border-radius:999px;font:500 13px var(--display);letter-spacing:.04em}
-.sw i{position:absolute;top:3px;left:3px;width:31px;height:31px;border-radius:50%;background:var(--bg);border:1.5px solid var(--ink);transition:left .2s}
+.sw i{position:absolute;top:3px;left:3px;width:31px;height:31px;border-radius:50%;background:var(--bg);border:1.5px solid var(--ink);transition:left var(--spring-dur) var(--spring)}
 .sw b{font-weight:500;position:absolute;right:13px}
 .sw.on{background:var(--ink);color:var(--on-ink)}
 .sw.on i{left:54px;border-color:var(--bg)}
@@ -193,6 +205,7 @@ h1{font:400 clamp(40px,11vw,62px)/1 var(--display);letter-spacing:-.025em;margin
   </div>
   <main class="grid">
     <section class="left">
+      <button class="backbar" id="backbar" hidden><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12.5 4.5L7 10l5.5 5.5"/></svg><span class="bn" id="backlabel">All companies</span><span class="num" id="backnum"></span></button>
       <div class="pill" id="pill">
         <button class="step" id="prev" aria-label="Previous"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4"><path d="M3.5 8h9"/></svg></button>
         <div class="pmain"><div style="min-width:0"><div class="pname" id="pname"></div><div class="psub" id="psub"></div></div></div>
@@ -445,6 +458,37 @@ COMPANIES.forEach(c => c.feeders.forEach(([u, s, w]) => (FEEDS[u] = FEEDS[u] || 
 const pad2 = n => String(n).padStart(2, '0');
 const reduce = () => matchMedia('(prefers-reduced-motion: reduce)').matches;
 
+// ── spring physics: every motion in the app runs on this one spring. Tune here.
+const SPRING = { stiffness: 300, damping: 26, mass: 1 };
+function spring(from, to, { v0, onUpdate, onDone } = {}) {
+  const { stiffness: k, damping: c, mass: m } = SPRING, n = from.length;
+  const x = from.slice(), v = v0 && v0.length === n ? v0.slice() : new Array(n).fill(0);
+  const span = to.map((t, i) => Math.max(Math.abs(t - from[i]), 1));
+  let last = performance.now(), raf = 0;
+  const frame = now => {
+    const dt = Math.min(.064, (now - last) / 1000); last = now;
+    const steps = Math.max(1, Math.ceil(dt / .004)), h = dt / steps;
+    for (let s = 0; s < steps; s++) for (let i = 0; i < n; i++) { v[i] += ((-k * (x[i] - to[i]) - c * v[i]) / m) * h; x[i] += v[i] * h; }
+    if (x.every((xi, i) => Math.abs(xi - to[i]) < span[i] * 1e-3 && Math.abs(v[i]) < span[i] * 1e-2)) { onUpdate(to.slice()); onDone && onDone(); return; }
+    onUpdate(x); raf = requestAnimationFrame(frame);
+  };
+  raf = requestAnimationFrame(frame);
+  return { stop: () => { cancelAnimationFrame(raf); return v.slice(); } };
+}
+// the same spring as a CSS easing curve, for transitions (toggles, ring, chevrons, presses)
+(function springCSS() {
+  const { stiffness: k, damping: c, mass: m } = SPRING, h = 1 / 240, pts = [];
+  let x = 0, v = 0, t = 0;
+  while (t < 3) { for (let i = 0; i < 4; i++) { v += ((-k * (x - 1) - c * v) / m) * h; x += v * h; t += h; } pts.push(x); if (t > .2 && Math.abs(x - 1) < 1e-3 && Math.abs(v) < 1e-2) break; }
+  const step = Math.max(1, Math.round(pts.length / 48)), curve = pts.filter((_, i) => i % step === 0).map(p => +p.toFixed(4));
+  curve[curve.length - 1] = 1;
+  const val = `linear(0, ${curve.join(', ')})`;
+  if (CSS.supports && CSS.supports('transition-timing-function', val)) {
+    document.documentElement.style.setProperty('--spring', val);
+    document.documentElement.style.setProperty('--spring-dur', t.toFixed(2) + 's');
+  }
+})();
+
 // projections rebuilt from stored params → pins for every region
 const PROJ = {}, PTS = {};
 for (const id in G) {
@@ -472,17 +516,26 @@ const chev = `<svg class="chev" viewBox="0 0 14 14" fill="none" stroke="currentC
 // ── state
 let st = { view: 'home', r: 'world', sel: null, uni: null, open: null, kinds: { f1: 1, ls: 1, ap: 1, cr: 1 }, listR: 'world' };
 const stack = [];
-let vb = null, anim = null, lastR = null;
+let vb = null, lastR = null;
 const svg = $('map');
 const el = (t, a = {}, p) => { const e = document.createElementNS(NS, t); for (const k in a) e.setAttribute(k, a[k]); p && p.appendChild(e); return e; };
 
 const listFor = r => COMPANIES.filter(c => st.kinds[c.kind] && (r === 'world' || c.region === r));
 function snapshot() { return JSON.parse(JSON.stringify(st)); }
-function nav(patch) { stack.push(snapshot()); st = { ...st, open: null, ...patch }; go(true); }
-function pick(id) { const c = CO[id]; nav({ view: 'co', sel: id, uni: null, r: c.region, listR: st.view === 'home' ? st.r : st.listR }); }
-function pickUni(id) { const u = UNIS[id]; nav({ view: 'uni', uni: id, sel: null, r: u.region || st.r }); }
-function home(r) { stack.length = 0; st = { ...st, view: 'home', r, sel: null, uni: null, open: null, listR: r }; go(); }
-function back() { if (stack.length) { st = stack.pop(); go(true); } else home(st.listR || 'world'); }
+let motion = null, homeScroll = 0;   // motion = { dir, flip } consumed by the next go()
+const rectOf = el => el ? { r: el.getBoundingClientRect(), fs: parseFloat(getComputedStyle(el).fontSize) } : null;
+function nav(patch, src) { stack.push(snapshot()); motion = { dir: 1, flip: rectOf(src) }; st = { ...st, open: null, ...patch }; go(true); }
+function pick(id, src) { const c = CO[id]; if (st.view === 'home') homeScroll = scrollY; nav({ view: 'co', sel: id, uni: null, r: c.region, listR: st.view === 'home' ? st.r : st.listR }, src); }
+function pickUni(id, src) { const u = UNIS[id]; nav({ view: 'uni', uni: id, sel: null, r: u.region || st.r }, src); }
+function home(r) { stack.length = 0; motion = { dir: 0 }; st = { ...st, view: 'home', r, sel: null, uni: null, open: null, listR: r }; go(); }
+// back to the company list: the name flies from the pill back into its row
+function toList() {
+  const from = st.sel, pillName = rectOf($('pname'));
+  stack.length = 0; motion = { dir: -1, back: { id: from, rect: pillName }, restore: homeScroll };
+  st = { ...st, view: 'home', r: st.listR || 'world', sel: null, uni: null, open: null };
+  go();
+}
+function back() { if (stack.length) { motion = { dir: -1 }; st = stack.pop(); go(true); } else toList(); }
 
 // ── map
 function base() {
@@ -671,18 +724,35 @@ function scaleBar() {
   el('text', { x: x + L + z(6), y: y + z(1), 'font-size': z(10.5), fill: 'var(--ink)', class: 'lbl', 'stroke-width': z(3), 'font-family': 'Space Mono, monospace' }, g).textContent = `${nice} km`;
 }
 
+let vbAnim = null;
 function zoomTo(t) {
-  cancelAnimationFrame(anim);
+  const v0 = vbAnim ? vbAnim.stop() : null; vbAnim = null;
   const done = () => { pins(); scaleBar(); };
   if (!vb || reduce()) { vb = t; svg.setAttribute('viewBox', vb.join(' ')); return done(); }
-  const f = vb.slice(), t0 = performance.now(), D = 520;
   svg.querySelector('#scale').innerHTML = '';
-  const stepF = n => {
-    let k = Math.min(1, (n - t0) / D); k = 1 - Math.pow(1 - k, 3);
-    vb = f.map((v, i) => v + (t[i] - v) * k); svg.setAttribute('viewBox', vb.join(' ')); pins();
-    if (k < 1) anim = requestAnimationFrame(stepF); else done();
-  };
-  anim = requestAnimationFrame(stepF);
+  vbAnim = spring(vb.slice(), t, { v0, onUpdate: x => { vb = x.map((v, i) => i > 1 ? Math.max(v, 1) : v); svg.setAttribute('viewBox', vb.join(' ')); pins(); }, onDone: () => { vbAnim = null; done(); } });
+}
+
+// panel content slides in from the side it came from, staggered, on the spring
+let slideAnim = null;
+function slideIn(dir) {
+  if (slideAnim) slideAnim.stop();
+  const els = [...$('panel').children, $('stats')];
+  const clear = () => els.forEach(e => { e.style.transform = ''; e.style.opacity = ''; });
+  if (reduce()) return clear();
+  const dx = dir * 44, dy = dir ? 0 : 14, lag = .07;
+  const apply = p => els.forEach((e, i) => { const q = Math.max(0, (p - i * lag) / (1 - i * lag)); e.style.transform = `translate(${(1 - q) * dx}px,${(1 - q) * dy}px)`; e.style.opacity = Math.min(1, q * 1.4); });
+  apply(0);
+  slideAnim = spring([0], [1], { onUpdate: ([p]) => apply(p), onDone: () => { slideAnim = null; clear(); } });
+}
+// shared-element move: text flies from one rect into its new place
+function flyFrom(el, f) {
+  if (!el || !f || reduce()) return;
+  const r1 = el.getBoundingClientRect(), fs1 = parseFloat(getComputedStyle(el).fontSize);
+  let dx = f.r.left - r1.left, dy = f.r.top - r1.top;
+  const lim = innerHeight; if (r1.top + dy > lim) dy = lim - r1.top; if (r1.top + dy < -80) dy = -80 - r1.top;
+  el.style.transformOrigin = '0 0';
+  spring([dx, dy, f.fs / fs1], [0, 0, 1], { onUpdate: ([x, y, s]) => { el.style.transform = `translate(${x}px,${y}px) scale(${s})`; }, onDone: () => { el.style.transform = ''; } });
 }
 
 // ── pill + cards + panel
@@ -749,10 +819,6 @@ function statsUni(id) {
     <div class="card"><div class="lab">Program to look at</div><p class="angle" style="font-size:14.5px">${UNIS[id].program}</p></div>`;
 }
 
-function backRow(label) {
-  return `<div class="phead"><button class="back" id="backBtn"><svg viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.4"><path d="M9 3L5 7l4 4"/></svg>${label}</button></div>`;
-}
-
 function panelHome() {
   const P = $('panel');
   const all = COMPANIES.filter(c => st.r === 'world' || c.region === st.r);
@@ -771,7 +837,7 @@ function panelHome() {
       <div class="rows">${list.map(c => `<div class="row"><button class="rowbtn" data-c="${c.id}"><span class="g">${glyph(c.kind)}</span><span class="rn">${c.name}<span class="rc">${c.city}</span></span><span class="num">${pad2(c.feeders.length)}</span>${chev}</button></div>`).join('') || '<p class="prog" style="padding:14px 2px">Every category is switched off. Turn one on above.</p>'}</div>
     </div>`;
   P.querySelectorAll('[data-k]').forEach(b => b.onclick = () => { const k = b.dataset.k; st.kinds = { ...st.kinds, [k]: st.kinds[k] ? 0 : 1 }; go(); });
-  P.querySelectorAll('[data-c]').forEach(b => b.onclick = () => pick(b.dataset.c));
+  P.querySelectorAll('[data-c]').forEach(b => b.onclick = () => pick(b.dataset.c, b.querySelector('.rn')));
   statsHome(list);
   setName(REGLONG[st.r]);
   $('psub').innerHTML = `${list.length} ${list.length === 1 ? 'company' : 'companies'} hiring here<br><span>Tap a company to see its schools.</span>`;
@@ -787,7 +853,7 @@ function alsoFeeds(uniId, exceptId) {
 function panelCo() {
   const c = CO[st.sel], P = $('panel');
   const regTag = id => { const u = UNIS[id]; return u.region === c.region ? '' : `<span class="tagx">${u.region ? REG[u.region] : 'off map'}</span>`; };
-  P.innerHTML = `${backRow(st.listR && st.listR !== 'world' ? REGLONG[st.listR] : 'All companies')}
+  P.innerHTML = `
     <div class="card"><div class="lab">Electromechanical angle</div><p class="angle">${c.angle}</p></div>
     <div>
       <div class="addrow"><span>Feeder schools</span><span class="m">${pad2(c.feeders.length)} · strongest first</span></div>
@@ -800,7 +866,6 @@ function panelCo() {
   P.querySelectorAll('[data-u]').forEach(b => b.onclick = () => { st.open = st.open === b.dataset.u ? null : b.dataset.u; panelCo(); pins(); });
   P.querySelectorAll('[data-go]').forEach(b => b.onclick = () => pick(b.dataset.go));
   P.querySelectorAll('[data-uni]').forEach(b => b.onclick = () => pickUni(b.dataset.uni));
-  $('backBtn').onclick = back;
   statsCo(c);
   setName(c.name);
   $('psub').innerHTML = `${KIND[c.kind].one}<br><span>${c.city}</span>`;
@@ -810,13 +875,12 @@ function panelCo() {
 
 function panelUni() {
   const u = UNIS[st.uni], f = (FEEDS[st.uni] || []).slice().sort((a, b) => b.s - a.s || a.c.name.localeCompare(b.c.name)), P = $('panel');
-  P.innerHTML = `${backRow('Back')}
+  P.innerHTML = `
     <div>
       <div class="addrow"><span>Companies hiring from here</span><span class="m">${pad2(f.length)}</span></div>
       <div class="rows">${f.map(x => `<div class="row"><button class="rowbtn" data-c="${x.c.id}"><span class="g">${glyph(x.c.kind)}</span><span class="rn${x.s === 3 ? ' b' : ''}">${x.c.name}${x.c.region !== u.region ? `<span class="tagx">${REG[x.c.region]}</span>` : ''}<span class="rc">${x.w}</span></span><span class="str s${x.s}">${SL[x.s]}</span>${chev}</button></div>`).join('')}</div>
     </div>`;
-  P.querySelectorAll('[data-c]').forEach(b => b.onclick = () => pick(b.dataset.c));
-  $('backBtn').onclick = back;
+  P.querySelectorAll('[data-c]').forEach(b => b.onclick = () => pick(b.dataset.c, b.querySelector('.rn')));
   statsUni(st.uni);
   setName(u.short);
   $('psub').innerHTML = `${u.name}<br><span>${u.city}</span>`;
@@ -838,21 +902,39 @@ function steppers() {
     const i = list.findIndex(c => c.id === st.sel);
     const to = j => { const c = list[(j + list.length) % list.length]; st = { ...st, sel: c.id, r: c.region, open: null }; go(); };
     prev.setAttribute('aria-label', 'Previous company'); next.setAttribute('aria-label', 'Next company');
-    prev.onclick = () => to(i - 1); next.onclick = () => to(i + 1);
+    prev.onclick = () => { motion = { dir: -1 }; to(i - 1); }; next.onclick = () => { motion = { dir: 1 }; to(i + 1); };
   }
 }
 
+function backbar() {
+  const b = $('backbar'), prev = stack[stack.length - 1];
+  b.hidden = st.view === 'home';
+  if (b.hidden) return;
+  const viaCo = st.view === 'uni' && prev && prev.view === 'co';
+  $('backlabel').textContent = viaCo ? `Back to ${CO[prev.sel].name}` : st.listR && st.listR !== 'world' ? `All ${REG[st.listR]} companies` : 'All companies';
+  $('backnum').textContent = viaCo ? '' : pad2(listFor(st.listR || 'world').length);
+  b.onclick = viaCo ? back : toList;
+}
+
 function go(scrollUp) {
+  const m = motion || { dir: 0 }; motion = null;
   tabs();
-  if (st.r !== lastR) { base(); vb = null; lastR = st.r; }
-  steppers();
+  if (st.r !== lastR) { if (vbAnim) { vbAnim.stop(); vbAnim = null; } base(); vb = null; lastR = st.r; }
+  steppers(); backbar();
   if (st.view === 'co') panelCo(); else if (st.view === 'uni') panelUni(); else panelHome();
   $('reset').hidden = st.view === 'home';
   zoomTo(focusBox());
-  if (scrollUp && $('pill').getBoundingClientRect().top < 0) $('pill').scrollIntoView({ behavior: reduce() ? 'auto' : 'smooth', block: 'start' });
+  if (m.restore != null) scrollTo({ top: m.restore, behavior: 'auto' });
+  else if (scrollUp) {
+    const y = $('pill').getBoundingClientRect().top + scrollY - ($('backbar').hidden ? 12 : 90);
+    if (scrollY > y) scrollTo({ top: Math.max(0, y), behavior: m.flip || reduce() ? 'auto' : 'smooth' });
+  }
+  slideIn(m.dir);
+  if (m.flip) flyFrom($('pname'), m.flip);
+  if (m.back && m.back.id) { const row = document.querySelector(`[data-c="${m.back.id}"] .rn`); flyFrom(row, m.back.rect); }
 }
 $('reset').onclick = () => home(st.r);
-addEventListener('keydown', e => { if (e.key === 'Escape') { if (!$('sheet').hidden) closeSheet(); else if (st.view !== 'home') back(); } });
+addEventListener('keydown', e => { if (e.key === 'Escape') { if (!$('sheet').hidden) closeSheet(); else if (st.view !== 'home') $('backbar').click(); } });
 let rT; addEventListener('resize', () => { clearTimeout(rT); rT = setTimeout(() => { if (vb) { pins(); scaleBar(); } }, 120); });
 
 // clock + counts

@@ -267,9 +267,10 @@ const pad2 = n => String(n).padStart(2, '0');
 const reduce = () => matchMedia('(prefers-reduced-motion: reduce)').matches;
 
 // ── spring physics: every motion in the app runs on this one spring. Tune here.
-const SPRING = { stiffness: 300, damping: 26, mass: 1 };
+const SPRING = { stiffness: 300, damping: 26, mass: 1 };       // quick: toggles, presses, chevrons, ring (CSS)
+const SPRING_TAP = { stiffness: 150, damping: 19, mass: 1 };   // unhurried: opening/closing a company, map zoom, scroll
 function spring(from, to, { v0, onUpdate, onDone } = {}) {
-  const { stiffness: k, damping: c, mass: m } = SPRING, n = from.length;
+  const { stiffness: k, damping: c, mass: m } = SPRING_TAP, n = from.length;
   const x = from.slice(), v = v0 && v0.length === n ? v0.slice() : new Array(n).fill(0);
   const span = to.map((t, i) => Math.max(Math.abs(t - from[i]), 1));
   let last = performance.now(), raf = 0;
@@ -616,13 +617,13 @@ function openCo(id, instant) {
   flyFrom(exp.querySelector('.pname'), from);
   // the pieces below the pill arrive one after another
   if (!reduce()) {
-    const parts = [...exp.querySelector('.expin').children].slice(2), lag = .08;
+    const parts = [...exp.querySelector('.expin').children].slice(2), lag = .1;
     const apply = p => parts.forEach((e, i) => { const q = Math.max(0, (p - i * lag) / (1 - i * lag)); e.style.transform = `translateY(${(1 - q) * 26}px) scale(${.97 + .03 * Math.min(q, 1.02)})`; e.style.opacity = Math.min(1, q * 1.5); });
     apply(0); spring([0], [1], { onUpdate: ([p]) => apply(p), onDone: () => parts.forEach(e => { e.style.transform = ''; e.style.opacity = ''; }) });
     const bar = exp.querySelector('.backbar'); bar.style.opacity = 0;
     spring([0], [1], { onUpdate: ([p]) => { bar.style.opacity = Math.min(1, p * 1.6); bar.style.transform = `scaleX(${.92 + .08 * p})`; }, onDone: () => { bar.style.transform = ''; bar.style.opacity = ''; } });
   }
-  setTimeout(() => zoomTo(focusBox()), reduce() ? 0 : 120);
+  setTimeout(() => zoomTo(focusBox()), reduce() ? 0 : 180);
   springScroll(row.getBoundingClientRect().top + scrollY - 8);
 }
 
